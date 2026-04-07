@@ -3,110 +3,116 @@ const ctx = canvas.getContext("2d");
 const statusEl = document.getElementById("status");
 const levelEl = document.getElementById("level");
 const restartButton = document.getElementById("restart");
-const photoInput = document.getElementById("photoInput");
 
 const W = canvas.width;
 const H = canvas.height;
+const BALL_RADIUS = 9;
+const GROWTH_TIME = 3000;
+const BACKGROUND_SRC = "face-fixed.jpg";
 
 const levelConfigs = [
-  { speed: 4.3, blinkMs: 900, name: "Level 1" },
-  { speed: 5.5, blinkMs: 620, name: "Level 2" },
-  { speed: 6.8, blinkMs: 420, name: "Level 3" },
+  { speed: 4.2, blinkMs: 820, name: "Level 1" },
+  { speed: 5.3, blinkMs: 620, name: "Level 2" },
+  { speed: 6.5, blinkMs: 450, name: "Level 3" },
+];
+
+const holes = [
+  { id: "eyeLeft", x: 250, y: 365, r: 13, growth: "eyebrow" },
+  { id: "eyeRight", x: 470, y: 365, r: 13, growth: "eyebrow" },
+  { id: "noseLeft", x: 340, y: 484, r: 10, growth: "nosehair" },
+  { id: "noseRight", x: 387, y: 484, r: 10, growth: "nosehair" },
+  { id: "mouth", x: 360, y: 605, r: 13, growth: "beard" },
+  { id: "earLeft", x: 90, y: 505, r: 12, growth: "eyelash" },
+  { id: "earRight", x: 630, y: 505, r: 12, growth: "eyelash" },
+  { id: "forehead", x: 360, y: 150, r: 14, growth: "hair" },
 ];
 
 const state = {
-  balls: [],
-  lip: { x: W / 2 - 84, y: 760, width: 168, height: 16, speed: 10 },
-  leftPressed: false,
-  rightPressed: false,
-  level: 1,
-  rounds: 0,
-  score: 0,
   phase: "countdown",
   countdownValue: 3,
   countdownUntil: 0,
+  blinkPhase: "open",
+  blinkStart: 0,
   blinkUntil: 0,
-  respawnAt: 0,
-  blinkClosed: false,
-  image: null,
-  imageReady: false,
-  gameOverFalls: 0,
+  balls: [],
+  level: 1,
+  rounds: 0,
+  score: 0,
+  drops: 0,
   message: "3",
-  growth: {
-    noseLeft: 0,
-    noseRight: 0,
-    earLeft: 0,
-    earRight: 0,
-    pupilLeft: 0,
-    pupilRight: 0,
-    forehead: 0,
+  background: null,
+  backgroundReady: false,
+  strandsByHole: Object.fromEntries(holes.map((h) => [h.id, []])),
+  lip: {
+    x: 305,
+    y: 620,
+    width: 110,
+    height: 28,
+    speed: 9,
+    sourceX: 300,
+    sourceY: 610,
+    sourceW: 120,
+    sourceH: 36,
   },
+  leftPressed: false,
+  rightPressed: false,
 };
 
-const holes = [
-  { id: "noseLeft", x: 333, y: 550, r: 10, type: "nose" },
-  { id: "noseRight", x: 386, y: 550, r: 10, type: "nose" },
-  { id: "earLeft", x: 105, y: 500, r: 11, type: "ear" },
-  { id: "earRight", x: 614, y: 500, r: 11, type: "ear" },
-  { id: "pupilLeft", x: 269, y: 423, r: 13, type: "pupil" },
-  { id: "pupilRight", x: 452, y: 423, r: 13, type: "pupil" },
-  { id: "forehead", x: 360, y: 260, r: 15, type: "forehead" },
-];
+let audioContext;
 
-const blinkEyes = {
-  left: { x: 270, y: 430 },
-  right: { x: 452, y: 430 },
-};
+function getAudioContext() {
+  if (!audioContext) {
+    audioContext = new AudioContext();
+  }
+  return audioContext;
+}
+
+function playTone(freq, durationMs, type, volume) {
+  const ac = getAudioContext();
+  const now = ac.currentTime;
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(volume, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + durationMs / 1000);
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  osc.start(now);
+  osc.stop(now + durationMs / 1000);
+}
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-function currentLevelConfig() {
+function levelConfig() {
   return levelConfigs[state.level - 1];
 }
 
 function updateHud() {
-  const cfg = currentLevelConfig();
-  statusEl.textContent = `${state.message} | 점수 ${state.score} | 놓친 볼 ${state.gameOverFalls}`;
-  levelEl.textContent = `${cfg.name} · Round ${state.rounds}`;
+  statusEl.textContent = `${state.message} | 점수 ${state.score} | 낙하 ${state.drops}`;
+  levelEl.textContent = `${levelConfig().name} · Round ${state.rounds}`;
 }
 
-function spawnBallsFromEyes() {
-  const cfg = currentLevelConfig();
-  const base = cfg.speed;
+function resetBallsFromEyes() {
+  const speed = levelConfig().speed;
   state.balls = [
-    {
-      x: blinkEyes.left.x,
-      y: blinkEyes.left.y,
-      vx: -base * 0.55,
-      vy: base,
-      r: 9,
-    },
-    {
-      x: blinkEyes.right.x,
-      y: blinkEyes.right.y,
-      vx: base * 0.55,
-      vy: base,
-      r: 9,
-    },
+    { x: 250, y: 365, vx: -speed * 0.55, vy: speed, r: BALL_RADIUS },
+    { x: 470, y: 365, vx: speed * 0.55, vy: speed, r: BALL_RADIUS },
   ];
-  state.message = "눈에서 어둠 볼 생성!";
   state.phase = "playing";
+  state.message = "검은 공 생성";
 }
 
-function enterBlinkPhase() {
-  const cfg = currentLevelConfig();
-  state.phase = "blink";
-  state.blinkClosed = true;
-  state.blinkUntil = performance.now() + cfg.blinkMs;
-  state.message = "눈 깜빡임...";
-}
-
-function scheduleRespawn() {
+function scheduleBlink() {
   state.rounds += 1;
   state.level = clamp(1 + Math.floor((state.rounds - 1) / 3), 1, 3);
-  enterBlinkPhase();
+  state.phase = "blink";
+  state.blinkPhase = "closing";
+  state.blinkStart = performance.now();
+  state.blinkUntil = performance.now() + levelConfig().blinkMs;
+  state.message = "눈 깜빡임";
 }
 
 function startCountdown() {
@@ -120,136 +126,149 @@ function restartGame() {
   state.level = 1;
   state.rounds = 0;
   state.score = 0;
-  state.gameOverFalls = 0;
+  state.drops = 0;
   state.balls = [];
-  state.growth = {
-    noseLeft: 0,
-    noseRight: 0,
-    earLeft: 0,
-    earRight: 0,
-    pupilLeft: 0,
-    pupilRight: 0,
-    forehead: 0,
-  };
+  state.strandsByHole = Object.fromEntries(holes.map((h) => [h.id, []]));
   startCountdown();
 }
 
-function drawFaceBackground() {
-  if (state.imageReady && state.image) {
-    ctx.drawImage(state.image, 0, 0, W, H);
+function loadBackground() {
+  const img = new Image();
+  img.onload = () => {
+    state.background = img;
+    state.backgroundReady = true;
+  };
+  img.onerror = () => {
+    state.backgroundReady = false;
+    state.message = "face-fixed.jpg 파일을 프로젝트 루트에 넣어주세요";
+  };
+  img.src = BACKGROUND_SRC;
+}
+
+function drawBackground() {
+  if (state.backgroundReady && state.background) {
+    ctx.drawImage(state.background, 0, 0, W, H);
     return;
   }
 
-  ctx.fillStyle = "#cbb79b";
+  ctx.fillStyle = "#b6a186";
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "#b49e85";
-  ctx.beginPath();
-  ctx.arc(W / 2, 270, 260, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.font = "26px sans-serif";
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.font = "24px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("사진을 선택하면 배경으로 적용됩니다", W / 2, 70);
+  ctx.fillText("face-fixed.jpg를 같은 폴더에 두세요", W / 2, 70);
 }
 
-function drawEyes() {
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  if (state.blinkClosed) {
-    ctx.fillRect(220, 420, 100, 4);
-    ctx.fillRect(402, 420, 100, 4);
-  } else {
-    ctx.beginPath();
-    ctx.ellipse(269, 423, 42, 18, 0, 0, Math.PI * 2);
-    ctx.ellipse(452, 423, 42, 18, 0, 0, Math.PI * 2);
-    ctx.fill();
+function drawBlinkOverlay(now) {
+  if (state.phase !== "blink") {
+    return;
   }
-}
 
-function drawLipsPaddle() {
-  const lip = state.lip;
-  const gradient = ctx.createLinearGradient(lip.x, lip.y, lip.x, lip.y + lip.height);
-  gradient.addColorStop(0, "#8c2d3a");
-  gradient.addColorStop(1, "#c44f62");
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.roundRect(lip.x, lip.y, lip.width, lip.height, 9);
-  ctx.fill();
+  const duration = levelConfig().blinkMs;
+  const t = clamp((now - state.blinkStart) / duration, 0, 1);
+  const closeAmount = t < 0.5 ? t * 2 : (1 - t) * 2;
+
+  const drawEyeLid = (cx, cy) => {
+    const h = 28 * closeAmount;
+    ctx.fillStyle = "#b58f76";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 50, h + 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  drawEyeLid(250, 365);
+  drawEyeLid(470, 365);
 }
 
 function drawHoles() {
   holes.forEach((hole) => {
+    ctx.fillStyle = "rgba(0,0,0,0.8)";
     ctx.beginPath();
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
     ctx.arc(hole.x, hole.y, hole.r, 0, Math.PI * 2);
     ctx.fill();
   });
 }
 
-function drawHairGrowth() {
-  // Nose hair
-  ["noseLeft", "noseRight"].forEach((id) => {
-    const hole = holes.find((h) => h.id === id);
-    const count = state.growth[id];
-    for (let i = 0; i < count; i += 1) {
-      const x = hole.x - 8 + i * 2;
-      const height = 6 + (i % 3) * 4;
-      ctx.strokeStyle = "#121212";
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(x, hole.y);
-      ctx.lineTo(x + (i % 2 === 0 ? 2 : -2), hole.y + height);
-      ctx.stroke();
-    }
-  });
+function createStrand(hole) {
+  const length = BALL_RADIUS * 4;
+  const now = performance.now();
+  let angle = -Math.PI / 2;
 
-  // Ear hair
-  ["earLeft", "earRight"].forEach((id) => {
-    const hole = holes.find((h) => h.id === id);
-    const count = state.growth[id];
-    for (let i = 0; i < count; i += 1) {
-      const y = hole.y - 8 + i * 2;
-      const dir = id === "earLeft" ? -1 : 1;
-      ctx.strokeStyle = "#181818";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(hole.x, y);
-      ctx.lineTo(hole.x + dir * (5 + (i % 4) * 2), y - (i % 2));
-      ctx.stroke();
-    }
-  });
-
-  // Eyebrows (pupil holes)
-  ["pupilLeft", "pupilRight"].forEach((id) => {
-    const hole = holes.find((h) => h.id === id);
-    const count = state.growth[id];
-    for (let i = 0; i < count; i += 1) {
-      const x = hole.x - 18 + i * 2;
-      const y = hole.y - 30 - (i % 2) * 2;
-      ctx.strokeStyle = "#201a17";
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.moveTo(x, y + 5);
-      ctx.lineTo(x + 1, y);
-      ctx.stroke();
-    }
-  });
-
-  // Forehead grass hair
-  const fh = holes.find((h) => h.id === "forehead");
-  for (let i = 0; i < state.growth.forehead; i += 1) {
-    const x = fh.x - 22 + i * 2;
-    const h = 10 + (i % 3) * 4;
-    ctx.strokeStyle = "#141414";
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.moveTo(x, fh.y - 2);
-    ctx.lineTo(x + (i % 2 ? 2 : -2), fh.y - h);
-    ctx.stroke();
+  if (hole.growth === "nosehair") {
+    angle = Math.PI / 2 + (Math.random() - 0.5) * 0.7;
+  } else if (hole.growth === "beard") {
+    angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+  } else if (hole.growth === "eyebrow") {
+    angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+  } else if (hole.growth === "eyelash") {
+    angle = hole.id === "earLeft" ? Math.PI : 0;
+    angle += (Math.random() - 0.5) * 0.4;
+  } else if (hole.growth === "hair") {
+    angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.6;
   }
+
+  return { start: now, angle, maxLength: length };
+}
+
+function drawStrands(now) {
+  holes.forEach((hole) => {
+    const strands = state.strandsByHole[hole.id];
+    strands.forEach((strand) => {
+      const elapsed = now - strand.start;
+      const progress = clamp(elapsed / GROWTH_TIME, 0, 1);
+      const len = strand.maxLength * progress;
+      const x2 = hole.x + Math.cos(strand.angle) * len;
+      const y2 = hole.y + Math.sin(strand.angle) * len;
+
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 2.1;
+      ctx.beginPath();
+      ctx.moveTo(hole.x, hole.y);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    });
+  });
+}
+
+function drawLipPaddle() {
+  const lip = state.lip;
+
+  if (state.backgroundReady && state.background) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(lip.x, lip.y, lip.width, lip.height, 13);
+    ctx.clip();
+    ctx.drawImage(
+      state.background,
+      lip.sourceX,
+      lip.sourceY,
+      lip.sourceW,
+      lip.sourceH,
+      lip.x,
+      lip.y,
+      lip.width,
+      lip.height,
+    );
+    ctx.restore();
+  } else {
+    const g = ctx.createLinearGradient(lip.x, lip.y, lip.x, lip.y + lip.height);
+    g.addColorStop(0, "#8f2f3e");
+    g.addColorStop(1, "#cc5b68");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.roundRect(lip.x, lip.y, lip.width, lip.height, 13);
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(lip.x, lip.y, lip.width, lip.height, 13);
+  ctx.stroke();
 }
 
 function drawBalls() {
-  ctx.fillStyle = "#0a0a0a";
+  ctx.fillStyle = "#000";
   state.balls.forEach((ball) => {
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
@@ -257,35 +276,40 @@ function drawBalls() {
   });
 }
 
-function drawOverlayText() {
-  if (state.phase === "countdown") {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 120px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(String(state.countdownValue), W / 2, H / 2);
+function drawCountdownOverlay() {
+  if (state.phase !== "countdown") {
+    return;
   }
+
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 120px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(String(state.countdownValue), W / 2, H / 2);
 }
 
-function growHairForHole(id) {
-  state.growth[id] = clamp(state.growth[id] + 2, 0, 30);
-  state.score += 10;
-  state.message = `${id}에 털 성장!`;
+function addStrand(holeId) {
+  const hole = holes.find((h) => h.id === holeId);
+  state.strandsByHole[holeId].push(createStrand(hole));
+  state.score += 12;
+  state.message = `${holeId} 성공`;
 }
 
-function handleBallPhysics(ball) {
+function updateBall(ball) {
   ball.x += ball.vx;
   ball.y += ball.vy;
 
   if (ball.x - ball.r <= 0 || ball.x + ball.r >= W) {
     ball.vx *= -1;
     ball.x = clamp(ball.x, ball.r, W - ball.r);
+    playTone(190, 80, "triangle", 0.04);
   }
 
   if (ball.y - ball.r <= 0) {
     ball.vy *= -1;
     ball.y = ball.r;
+    playTone(200, 70, "triangle", 0.04);
   }
 
   const lip = state.lip;
@@ -300,21 +324,23 @@ function handleBallPhysics(ball) {
     const offset = (ball.x - (lip.x + lip.width / 2)) / (lip.width / 2);
     const speed = Math.hypot(ball.vx, ball.vy) + 0.15;
     ball.vx = speed * offset;
-    ball.vy = -Math.max(3.5, speed * (1 - Math.abs(offset) * 0.2));
+    ball.vy = -Math.max(3.7, speed * (1 - Math.abs(offset) * 0.15));
     ball.y = lip.y - ball.r;
+    playTone(320, 95, "square", 0.05);
   }
 
   for (const hole of holes) {
     const d = Math.hypot(ball.x - hole.x, ball.y - hole.y);
     if (d <= hole.r - 1) {
-      growHairForHole(hole.id);
+      addStrand(hole.id);
+      playTone(520, 140, "sine", 0.05);
       return "absorbed";
     }
   }
 
   if (ball.y - ball.r > H) {
-    state.gameOverFalls += 1;
-    state.message = "볼이 아래로 떨어짐!";
+    state.drops += 1;
+    state.message = "볼 낙하";
     return "lost";
   }
 
@@ -322,88 +348,78 @@ function handleBallPhysics(ball) {
 }
 
 function updatePlaying() {
-  const nextBalls = [];
+  const survivors = [];
   state.balls.forEach((ball) => {
-    const result = handleBallPhysics(ball);
-    if (result === "alive") {
-      nextBalls.push(ball);
+    if (updateBall(ball) === "alive") {
+      survivors.push(ball);
     }
   });
-  state.balls = nextBalls;
 
+  state.balls = survivors;
   if (state.balls.length === 0) {
-    state.respawnAt = performance.now() + 250;
-    state.phase = "waitingRespawn";
+    state.phase = "respawnWait";
+    state.blinkUntil = performance.now() + 220;
   }
 }
 
-function updateLip() {
+function updatePaddle() {
   if (state.leftPressed) {
     state.lip.x -= state.lip.speed;
   }
   if (state.rightPressed) {
     state.lip.x += state.lip.speed;
   }
-  state.lip.x = clamp(state.lip.x, 34, W - 34 - state.lip.width);
+  state.lip.x = clamp(state.lip.x, 40, W - 40 - state.lip.width);
 }
 
-function tick() {
-  const now = performance.now();
-  updateLip();
+function updateGame(now) {
+  updatePaddle();
 
   if (state.phase === "countdown" && now >= state.countdownUntil) {
     state.countdownValue -= 1;
     if (state.countdownValue <= 0) {
-      scheduleRespawn();
+      scheduleBlink();
     } else {
       state.message = String(state.countdownValue);
       state.countdownUntil = now + 1000;
     }
   }
 
-  if (state.phase === "waitingRespawn" && now >= state.respawnAt) {
-    scheduleRespawn();
+  if (state.phase === "respawnWait" && now >= state.blinkUntil) {
+    scheduleBlink();
   }
 
   if (state.phase === "blink" && now >= state.blinkUntil) {
-    state.blinkClosed = false;
-    spawnBallsFromEyes();
+    resetBallsFromEyes();
   }
 
   if (state.phase === "playing") {
     updatePlaying();
   }
-
-  render();
-  updateHud();
-  requestAnimationFrame(tick);
 }
 
-function render() {
-  drawFaceBackground();
-  drawHairGrowth();
+function render(now) {
+  drawBackground();
+  drawBlinkOverlay(now);
   drawHoles();
-  drawEyes();
-  drawLipsPaddle();
+  drawStrands(now);
+  drawLipPaddle();
   drawBalls();
-  drawOverlayText();
+  drawCountdownOverlay();
 }
 
-function loadPhotoFromFile(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      state.image = img;
-      state.imageReady = true;
-      state.message = "사진 배경 적용 완료";
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
+function loop(now) {
+  updateGame(now);
+  render(now);
+  updateHud();
+  requestAnimationFrame(loop);
 }
 
 window.addEventListener("keydown", (event) => {
+  if (["ArrowLeft", "ArrowRight", "Space", "KeyA", "KeyD"].includes(event.code)) {
+    event.preventDefault();
+  }
+
   if (event.code === "ArrowLeft" || event.code === "KeyA") {
     state.leftPressed = true;
   }
@@ -424,17 +440,15 @@ window.addEventListener("keyup", (event) => {
 canvas.addEventListener("mousemove", (event) => {
   const rect = canvas.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * W;
-  state.lip.x = clamp(x - state.lip.width / 2, 34, W - 34 - state.lip.width);
+  state.lip.x = clamp(x - state.lip.width / 2, 40, W - 40 - state.lip.width);
 });
 
-photoInput.addEventListener("change", (event) => {
-  const file = event.target.files?.[0];
-  if (file) {
-    loadPhotoFromFile(file);
-  }
+canvas.addEventListener("pointerdown", () => {
+  getAudioContext();
 });
 
 restartButton.addEventListener("click", restartGame);
 
+loadBackground();
 restartGame();
-requestAnimationFrame(tick);
+requestAnimationFrame(loop);
