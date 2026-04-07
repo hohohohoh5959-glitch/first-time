@@ -3,17 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>고전 퐁 게임</title>
+    <title>Face Breakout</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main class="app">
-      <h1>🏓 Classic Pong</h1>
-      <p class="help">W/S: 왼쪽 패들 이동 · ↑/↓: 오른쪽 패들 이동 · Space: 일시정지</p>
-      <canvas id="game" width="900" height="520" aria-label="퐁 게임 화면"></canvas>
-      <section class="panel">
+      <h1>🧿 Face Breakout</h1>
+      <p class="description">
+        입술 패들로 어둠 볼을 튕겨서 얼굴의 구멍에 넣어 털을 자라게 하세요.
+      </p>
+
+      <section class="toolbar">
+        <label>
+          배경 사진 선택
+          <input id="photoInput" type="file" accept="image/*" />
+        </label>
         <button id="restart">다시 시작</button>
-        <p id="status">게임 시작!</p>
+      </section>
+
+      <canvas id="game" width="720" height="960" aria-label="Face Breakout 게임 화면"></canvas>
+
+      <section class="hud">
+        <p id="status">로딩 중...</p>
+        <p id="level">Level 1</p>
       </section>
     </main>
 
