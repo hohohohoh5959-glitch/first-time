@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>고전 퐁 게임</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>🏓 Classic Pong</h1>
+      <p class="help">W/S: 왼쪽 패들 이동 · ↑/↓: 오른쪽 패들 이동 · Space: 일시정지</p>
+      <canvas id="game" width="900" height="520" aria-label="퐁 게임 화면"></canvas>
+      <section class="panel">
+        <button id="restart">다시 시작</button>
+        <p id="status">게임 시작!</p>
+      </section>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>

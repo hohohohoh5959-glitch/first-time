@@ -1,0 +1,63 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at top, #1f2f3f, #0a0f15 65%);
+  color: #f3f7ff;
+  font-family: "Pretendard", "Noto Sans KR", sans-serif;
+}
+
+.app {
+  width: min(92vw, 980px);
+  text-align: center;
+}
+
+h1 {
+  margin-bottom: 0.4rem;
+}
+
+.help {
+  margin: 0 0 1rem;
+  opacity: 0.82;
+  font-size: 0.95rem;
+}
+
+canvas {
+  width: 100%;
+  border: 3px solid #e9f0ff;
+  background: #070b10;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.panel {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  background: #5ea7ff;
+  color: #00111f;
+  font-weight: 700;
+}
+
+#status {
+  margin: 0;
+  font-weight: 600;
+}
